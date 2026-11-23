@@ -1,0 +1,21 @@
+[project]
+name = "aenea"
+version = "0.1.0"
+description = "Aenea — autonomous signal discovery and coordination"
+requires-python = ">=3.13"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["apps/*", "packages/*"]
+
+[dependency-groups]
+dev = ["ruff>=0.11,<1"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

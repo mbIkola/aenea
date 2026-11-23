@@ -1,0 +1,10 @@
+# Design example only. The scaffold does not load this file.
+# Copy to profile.local.toml when the reader is implemented.
+profile = "raid"
+enabled = false
+read_only = true
+chat_ids = []
+
+[matching]
+# Illustrative phrases; matching rules and character extraction are not implemented.
+phrases = ["дайте таланты на", "подскажите таланты на", "таланты для"]

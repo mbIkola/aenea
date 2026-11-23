@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scaffold:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.18"
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv sync --locked --all-packages
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked --package aenea-telegram-agent aenea-telegram --help
+      - run: uv run --locked --package aenea-telegram-agent aenea-telegram --version
+      - run: uv build --all-packages
