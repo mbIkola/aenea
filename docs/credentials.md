@@ -1,21 +1,56 @@
-# Credential policy
+# Конфигурация и credentials Aenea
 
-## Current state
+## Принятое соглашение
 
-No credential store or authenticated environment profile is configured for Aenea.
-This is a blocker for Telegram login and live reads, not for local packaging or CI.
+Хранилище проекта — Proton Pass, vault **`aenea`**. Item называется по сервису, поля — по назначению. Это отдельное соглашение Aenea; хранилища и профили ICA/Codex не используются.
 
-Before authenticated implementation, record the selected provider, exact secret references,
-explicit environment/profile and native process-injection command in this document without secret values.
-Do not guess these settings from another project. ICA and Codex infrastructure credential policies do not choose Aenea’s store.
+Текущий профиль — `dev`, выбирается явно через локальный reference-файл `.env` с `AENEA_ENV=dev`. В `.env` хранятся только `pass://` ссылки и несекретные настройки. Версионируемый `.env.example` содержит тот же шаблон. Значения секретов пользователь добавляет самостоятельно в Proton Pass, не в Git и не в чат.
 
-## Rules
+В этом шаге записи Proton Pass не создавались, не читались и не проверялись. Пути ниже — согласованная адресация для настройки. Наличие ссылок в файле не доказывает наличие соответствующих item/полей или доступ к ним.
 
-- Inject secrets using the declared provider’s native mechanism and explicit profile.
-- Never generate plaintext dotenv files from a secret store.
-- Never include literal secrets in shell arguments, Git, logs or fixtures.
-- Treat Telegram session files/strings as account credentials; declare their protected persistent storage before login.
-- Never silently reauthenticate with old files, another account, vault or provider.
-- Do not import, rotate, migrate or delete existing credentials as a setup side effect.
+## Reference-профиль dev
 
-No login command is supplied until the project’s credential process is declared.
+| Переменная процесса | Ссылка или несекретное значение | Назначение |
+| --- | --- | --- |
+| `AENEA_ENV` | `dev` | Явный выбор окружения. |
+| `AENEA_SQLITE_PATH` | `runtime/aenea.dev.sqlite3` | Проектный путь SQLite, пока без реализованного загрузчика. |
+| `LANGFUSE_BASE_URL` | `pass://aenea/langfuse/base_url` | Адрес hosted Langfuse именно выбранного проекта/региона. |
+| `LANGFUSE_PUBLIC_KEY` | `pass://aenea/langfuse/public_key` | Публичный API-ключ проекта Langfuse. |
+| `LANGFUSE_SECRET_KEY` | `pass://aenea/langfuse/secret` | Секретный API-ключ того же проекта Langfuse. |
+| `OPENAI_API_KEY` | `pass://aenea/openai/api_key` | Зарезервировано; аккаунт/ключ ещё не подготовлены. |
+| `TELEGRAM_API_ID` | `pass://aenea/telegram/api_id` | Зарезервировано для собственного Telegram application. |
+| `TELEGRAM_API_HASH` | `pass://aenea/telegram/api_hash` | Зарезервировано для того же application. |
+| `TELEGRAM_PHONE` | `pass://aenea/telegram/phone` | Зарезервировано для отдельного тестового аккаунта. |
+
+`base_url` не является секретом, но хранится рядом с ключами, чтобы явно выбирать один hosted-проект. Например, EU Cloud использует `https://cloud.langfuse.com`, US — `https://us.cloud.langfuse.com`; фактический адрес берётся из выбранного проекта, а не угадывается по местоположению пользователя. [Настройка Langfuse](https://langfuse.com/docs/observability/get-started).
+
+Ссылки по именам требуют отсутствия неоднозначных vault/item. Если имя переименовано, ссылка не разрешается или недоступна — запуск блокируется. Автоматического перехода к другому item, аккаунту или хранилищу нет. Переход на ссылки с точными ID при необходимости выполняется явно, без чтения значений в вывод.
+
+## Инъекция в процесс
+
+Используется native `pass-cli run` с явным `--env-file`. Это будущий способ запуска после заполнения профиля, а не работающая интеграция текущего scaffold:
+
+```sh
+pass-cli run --env-file .env -- uv run --locked --package aenea-telegram-agent aenea-telegram
+```
+
+Все активные ссылки выбранного файла должны разрешаться. Сейчас OpenAI и Telegram ещё не подготовлены, поэтому полный профиль не считается готовым для такого запуска. Перед отдельными проверками сервисов следует явно подготовить reference-профиль только с нужными ссылками; отсутствие доступа нельзя маскировать fallback-механизмом.
+
+Не выполнять `source .env`: shell не разыменовывает Proton-ссылки. Не материализовывать `.env` с plaintext-секретами, не использовать `pass-cli inject` для генерации такого файла, не выводить окружение процесса. Сохранить стандартное маскирование CLI. Приложение в будущем получает уже разрешённые значения через окружение, без собственного загрузчика секретов и неявного dotenv fallback.
+
+У текущего CLI нет загрузчика `.env`, подключений к сервисам и проверки этих переменных. Offline-проверки упаковки выполняются обычным `uv` без credentials.
+
+## Telegram-сессия
+
+Сессия авторизует доступ к аккаунту и считается секретом. Способ её защищённого постоянного хранения и обновления нужно определить перед первым входом. Пока не выбираются ни открытый session-файл, ни конкретный формат сериализации, ни автоматический экспорт в vault.
+
+Файлы сессий и локальные SQLite игнорируются Git. Сам по себе `.gitignore` не является защитой данных на диске. До live-пилота нужно определить права доступа, хранение и резервное копирование сессии; в доменную SQLite или hosted Langfuse её содержимое не попадает. Коды входа и 2FA не передаются через чат или аргументы команд.
+
+## Правила
+
+- Не печатать секреты, не помещать их литералы в аргументы команд, Git, логи и тестовые данные.
+- Не читать vault `Personal` и не использовать `ica` или инфраструктурный vault Codex как fallback.
+- Не менять глобальные defaults CLI; всегда задавать reference-файл и проектное окружение явно.
+- Не создавать, не импортировать, не мигрировать, не удалять и не ротировать credentials как побочный эффект запуска.
+- При отсутствии поля или доступа остановить соответствующую authenticated-операцию и сообщить о блокере.
+- `.env` остаётся локальным и игнорируется Git; `.env.example` разрешён в Git только со ссылками и несекретными настройками.

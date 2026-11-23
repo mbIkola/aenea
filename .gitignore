@@ -13,6 +13,7 @@ dist/
 # Credentials and Telegram account sessions
 .env
 .env.*
+!/.env.example
 *.session*
 *.session-journal
 *.sqlite*

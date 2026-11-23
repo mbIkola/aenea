@@ -1,18 +1,24 @@
 # Aenea · Энея
 
-Autonomous signal discovery and coordination. Named after Aenea from Dan Simmons’ *Hyperion Cantos*.
+Система поиска сигналов и координации их обработки. Названа в честь Энеи из цикла Дэна Симмонса «Песни Гипериона».
 
-Aenea will monitor selected sources and turn relevant messages into signals for human review.
-The first experiment is a read-only Telegram user client that detects RAID: Shadow Legends talent requests.
+Aenea будет наблюдать за выбранными источниками и превращать сообщения в отдельные кейсы. Первый сценарий — запросы талантов RAID: Shadow Legends в Telegram. Другой сценарий — обращения потенциальных клиентов автосервиса.
 
-## Status
+## Текущее состояние
 
-Scaffold only: workspace, package boundaries, CLI, example configuration and CI.
-Telegram login, message ingestion, matching and delivery are not implemented.
+Подготовлен scaffold: uv workspace, границы пакетов, CLI, пример конфигурации и CI. Концепция и диаграммы зафиксированы в [документации](docs/README.md).
 
-## Development
+Вход в Telegram, приём сообщений, классификация, SQLite, обработчики и доставка пока не реализованы. Langfuse и OpenAI не подключены.
 
-Requires Python 3.13 and [uv](https://docs.astral.sh/uv/).
+## Принятые решения MVP
+
+Один процесс с отдельными модулями и SQLite. Центральная сущность — `Case`, состояние которого сохраняется между сообщениями и перезапусками. Hosted Langfuse отвечает за наблюдаемость. OpenAI предусмотрен на будущее; LangGraph и отдельный брокер пока не нужны. CRM подключается независимым потребителем событий.
+
+Начальный Telegram-клиент читает явно разрешённые группы отдельным аккаунтом. Ответы и другие внешние действия сначала проходят dry-run; разрешение на отправку задаётся отдельно.
+
+## Разработка
+
+Нужны Python 3.13 и [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync --locked --all-packages
@@ -23,18 +29,16 @@ uv run --locked ruff format --check .
 uv build --all-packages
 ```
 
-## Layout
+Для этих offline-проверок ключи не нужны.
 
-- `apps/telegram-agent/` — Telegram user client application, based on Telethon.
-- `packages/contracts/` — reserved home for shared signal contracts; no public schema yet.
-- `configs/raid/` — non-secret example profile for the first use case.
-- `docs/architecture.md` — boundaries and the next vertical slice.
-- `docs/credentials.md` — prerequisite for authenticated development.
+## Структура
 
-An orchestrator, CRM and notification services can become additional applications when needed.
+- `apps/telegram-agent/` — приложение пользовательского Telegram-клиента на Telethon; сейчас пакет с CLI.
+- `packages/contracts/` — место общих контрактов; публичная схема сигналов ещё не реализована.
+- `configs/raid/` — несекретный пример профиля первого сценария.
+- `docs/` — архитектура, диаграммы и правила конфигурации на русском.
+- `.env.example` — reference-шаблон dev с Proton Pass URI и несекретными настройками.
 
-## Account access
+## Credentials
 
-No credentials are needed to install, build or run CLI smoke checks.
-Before implementing login, declare Aenea’s credential store and an explicit development profile.
-See `docs/credentials.md`. Never commit Telegram sessions or place secrets in dotenv files.
+Хранилище проекта — Proton Pass vault `aenea`. Локальный `.env` содержит только ссылки и несекретные настройки; значения пользователь хранит в vault. Отсутствующие OpenAI и Telegram credentials зарезервированы ссылками, а не выдуманными ключами. См. [точную адресацию и ограничения запуска](docs/credentials.md).

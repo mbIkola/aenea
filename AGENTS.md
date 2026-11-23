@@ -1,25 +1,35 @@
-# Aenea contributor instructions
+# Инструкции для работы с Aenea
 
-## Scope and architecture
+## Область и архитектура
 
-- Aenea is a multi-application monorepo. RAID is a scenario, not the product identity.
-- Use Python 3.13 and uv for Python packages. Commit uv.lock after dependency changes.
-- Applications live under apps/; reusable contracts belong under packages/.
-- Do not create empty CRM, orchestration or notification services ahead of requirements.
-- The initial Telegram integration is a user client with read-only application behavior.
-- Process only explicitly selected group IDs. Exclude private dialogs by default.
-- Do not add sending, joining, reactions, typing or read acknowledgements to the reader.
-- Keep matching independent of Telegram transport and validate it with offline fixtures when implemented.
+- Документация проекта ведётся на русском. Основной источник концепции — docs/architecture.md.
+- Aenea — monorepo нескольких приложений. RAID является сценарием, а не названием продукта.
+- Использовать Python 3.13 и uv. После изменения зависимостей коммитить uv.lock.
+- Приложения размещать в apps/, общие контракты — в packages/.
+- Первый MVP — модули одного процесса и SQLite, без обязательных LangGraph, внешнего брокера и CRM.
+- Центральная сущность — Case. Связь с существующим кейсом проверять до классификации нового запроса.
+- Состояние кейса и порождённые задания сохранять; не удерживать LLM-сессию или coroutine в ожидании ответа сутками.
+- Не создавать пустые сервисы CRM, оркестрации и уведомлений заранее.
+- Telegram-клиент обрабатывает только явно выбранные группы. Личные диалоги по умолчанию исключены.
+- Начальный режим — чтение и dry-run. Отправку выполнять только через отдельный Writer-интерфейс, Outbox и явную политику сценария/группы.
+- Не добавлять Reader полномочия отправки, реакций или автоматического вступления в группы. Read-only не должен реализовывать ghost mode или подмену протокольных статусов Telegram.
+- Matching отделять от транспорта и проверять offline-примерами при реализации поведения.
+- Hosted Langfuse — наблюдаемость, не источник состояния кейсов. По умолчанию не экспортировать содержимое сообщений и контакты; секреты не экспортировать никогда.
+- LLM-обработку сообщений не включать автоматически после появления ключа: учитывать ограничения использования контента из docs/architecture.md.
 
 ## Credentials
 
-- Aenea has no configured credential store yet. Authenticated work is blocked until an exact store reference and environment profile are declared.
-- Do not infer a store from ICA or Codex infrastructure, read old credential files, change CLI defaults or fall back to another vault.
-- Use the declared store’s native process injection. Never print secrets, put literal secrets in command arguments or Git, or generate plaintext dotenv files.
-- Telegram sessions authorize account access. Keep session material out of Git and logs and follow the declared storage policy.
-- No credentials are needed for packaging checks. CI must remain offline with respect to Telegram.
+- Хранилище Aenea — Proton Pass vault aenea. Точные URI и профиль dev описаны в docs/credentials.md и .env.example.
+- .env — локальный reference-файл: только pass:// URI и несекретные настройки. Не печатать и не коммитить его содержимое при последующих изменениях пользователем.
+- Использовать native pass-cli run с явным --env-file и окружением. Не менять defaults CLI и не добавлять собственный загрузчик секретов.
+- Не использовать Personal, ICA или инфраструктуру Codex как альтернативное хранилище.
+- Не печатать секреты, не помещать их литералы в аргументы команд или Git, не генерировать plaintext dotenv из vault.
+- Отсутствующая ссылка или доступ — блокер соответствующей authenticated-операции. Никаких fallback к старым файлам или другому vault.
+- Не создавать, не импортировать и не ротировать credentials как побочный эффект проверки.
+- Telegram-сессия — секрет доступа. Способ защищённого постоянного хранения нужно согласовать перед первым входом.
+- Для проверок упаковки credentials не нужны. CI не подключается к Telegram и внешним аккаунтам.
 
-## Checks
+## Проверки scaffold
 
 ```sh
 uv sync --locked --all-packages
@@ -30,4 +40,4 @@ uv run --locked --package aenea-telegram-agent aenea-telegram --version
 uv build --all-packages
 ```
 
-Add behavior tests when behavior is introduced; do not claim this scaffold reads Telegram.
+Тесты поведения добавляются вместе с поведением. Не заявлять, что текущий scaffold уже читает Telegram. При изменении только документации проверять diff, локальные ссылки, диаграммы и отсутствие изменений реализации; повторно собирать пакеты без причины не требуется.
