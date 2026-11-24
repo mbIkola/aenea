@@ -3,7 +3,7 @@ name = "aenea-telegram-agent"
 version = "0.1.0"
 description = "Aenea Telegram user-client application"
 requires-python = ">=3.13"
-dependencies = ["aenea-contracts", "telethon>=1.45,<2"]
+dependencies = ["aenea-contracts", "telethon>=1.46,<2"]
 
 [project.scripts]
 aenea-telegram = "aenea_telegram.cli:main"

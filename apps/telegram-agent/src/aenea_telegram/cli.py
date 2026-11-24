@@ -5,11 +5,14 @@ import asyncio
 import json
 import os
 import sys
+from contextlib import nullcontext
 from importlib.metadata import version
+from pathlib import Path
 
 from telethon.errors import FloodWaitError
 
 from .config import AppError, load_config
+from .inbox import SQLiteInbox
 from .reader import run
 from .session_store import ProtonSessionStore
 
@@ -49,8 +52,9 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("login", help="Войти и сохранить новую сессию в Proton Pass vault aenea")
     commands.add_parser("groups", help="Показать ID и названия групп аккаунта")
-    watch = commands.add_parser("watch", help="Читать новые сообщения одной выбранной группы")
+    watch = commands.add_parser("watch", help="Сохранять новые сообщения выбранной группы в SQLite")
     watch.add_argument("--chat-id", type=int, required=True, help="ID группы из команды groups")
+    watch.add_argument("--db", type=Path, required=True, help="Путь к локальной SQLite Inbox")
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -59,15 +63,17 @@ def main() -> None:
         cfg = load_config(os.environ, session_required=args.command != "login")
         if args.command == "login":
             require_terminal()
-        asyncio.run(
-            run(
-                args.command,
-                cfg,
-                chat_id=getattr(args, "chat_id", None),
-                store=ProtonSessionStore() if args.command == "login" else None,
-                emit=emit_output,
+        with SQLiteInbox(args.db) if args.command == "watch" else nullcontext() as inbox:
+            asyncio.run(
+                run(
+                    args.command,
+                    cfg,
+                    chat_id=getattr(args, "chat_id", None),
+                    store=ProtonSessionStore() if args.command == "login" else None,
+                    inbox=inbox,
+                    emit=emit_output,
+                )
             )
-        )
     except KeyboardInterrupt:
         raise SystemExit(130) from None
     except AppError as exc:
