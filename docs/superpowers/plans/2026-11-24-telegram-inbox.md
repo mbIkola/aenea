@@ -44,4 +44,6 @@
 - [x] Обновить запуск и статус реализации, ограничения live-only, чувствительность SQLite, правила повторов и метаданных. Не запускать Telegram и не обращаться к credentials ради offline-проверок.
 - [x] Проверить соответствие десяти критериям спецификации и выполнить отдельное code review.
 - [x] Выполнить scaffold checks из AGENTS.md и unittest; проверить diff и ссылки документации.
-- [ ] Создать коммиты, push ветки и PR в `codex/telegram-reader-poc`, чтобы diff содержал только Inbox поверх исходного Reader POC; проверить base/head и URL PR.
+- [x] Создать коммиты, push ветки и PR в `codex/telegram-reader-poc`, чтобы diff содержал только Inbox поверх исходного Reader POC; проверить base/head и URL PR.
+
+Результат: [PR #1 — SQLite Inbox для Telegram Reader](https://github.com/mbIkola/aenea/pull/1).
