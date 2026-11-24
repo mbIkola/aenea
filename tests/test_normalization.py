@@ -52,6 +52,21 @@ class NormalizeMessageTests(unittest.TestCase):
         self.assertEqual(result.reply_to_message_id, 17)
         self.assertEqual(result.topic_id, 12)
 
+    def test_ordinary_discussion_thread_does_not_become_forum_topic(self):
+        for forum_topic in (False, None):
+            with self.subTest(forum_topic=forum_topic):
+                result = self._normalize(
+                    self._message(
+                        reply_to=types.MessageReplyHeader(
+                            reply_to_msg_id=17, reply_to_top_id=12, forum_topic=forum_topic
+                        )
+                    )
+                )
+                self.assertIsNone(result.topic_id)
+                self.assertEqual(result.reply_to_message_id, 17)
+                header = self._metadata(result)["content"]["reply_to"]
+                self.assertEqual(header["reply_to_top_id"], 12)
+
     def test_external_and_scheduled_replies_do_not_make_local_links(self):
         external = self._normalize(
             self._message(

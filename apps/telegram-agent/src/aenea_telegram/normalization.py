@@ -462,9 +462,14 @@ def normalize_message(
         same_peer = reply_peer is None or reply_peer_id == chat_id
         if not scheduled and not ephemeral and same_peer:
             local_reply = reply_id
-        if same_peer and not scheduled and not ephemeral:
+        if (
+            same_peer
+            and not scheduled
+            and not ephemeral
+            and bool(getattr(reply, "forum_topic", False))
+        ):
             topic_id = getattr(reply, "reply_to_top_id", None)
-            if topic_id is None and bool(getattr(reply, "forum_topic", False)):
+            if topic_id is None:
                 topic_id = reply_id
 
     snapshot_projection = _Projection(snapshot=True)

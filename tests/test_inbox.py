@@ -10,6 +10,7 @@ from pathlib import Path
 from aenea_contracts import IncomingMessage, MessageKey, StoreResult
 from aenea_telegram.inbox import (
     ContentConflictError,
+    InboxError,
     MetadataVersionError,
     SchemaVersionError,
     SQLiteInbox,
@@ -79,6 +80,41 @@ class SQLiteInboxTests(unittest.IsolatedAsyncioTestCase):
         ).fetchone()
         self.assertEqual(row["received_at"], "2026-11-24T10:00:00+00:00")
         self.assertEqual(json.loads(row["metadata_json"])["snapshot"]["views"], 1)
+
+    async def test_memory_database_is_rejected(self):
+        for path in (":memory:", Path(":memory:")):
+            with self.subTest(path=path):
+                with self.assertRaises(InboxError):
+                    with SQLiteInbox(path):
+                        pass
+
+    async def test_boolean_and_number_metadata_are_distinct_content(self):
+        def metadata(value, *, wrapped):
+            content = {"nested": [value]}
+            return json.dumps({"content": content, "snapshot": {}} if wrapped else content)
+
+        for index, (number, boolean) in enumerate(((1, True), (0, False))):
+            for wrapped in (False, True):
+                message_id = 100 + index * 2 + wrapped
+                original = message(
+                    message_id=message_id, metadata_json=metadata(number, wrapped=wrapped)
+                )
+                await self.inbox.accept(original)
+                with self.subTest(number=number, wrapped=wrapped):
+                    with self.assertRaises(ContentConflictError):
+                        await self.inbox.accept(
+                            message(
+                                message_id=message_id,
+                                metadata_json=metadata(boolean, wrapped=wrapped),
+                            )
+                        )
+                stored = self.inbox._connection.execute(
+                    "SELECT metadata_json FROM messages WHERE message_id=?", (message_id,)
+                ).fetchone()[0]
+                stored_metadata = json.loads(stored)
+                stored_content = stored_metadata["content"] if wrapped else stored_metadata
+                self.assertIs(type(stored_content["nested"][0]), int)
+                self.assertEqual(stored_content["nested"][0], number)
 
     async def test_identity_scopes_accounts_and_chats(self):
         variants = [message(), message(source_account_id=12), message(chat_id=-10023)]

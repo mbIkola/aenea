@@ -38,12 +38,15 @@ def _timestamp(value: datetime) -> str:
     return value.astimezone(UTC).isoformat()
 
 
-def _canonical_metadata(raw: str) -> tuple[str, object]:
-    value = json.loads(raw)
-    canonical = json.dumps(
+def _canonical_json(value: object) -> str:
+    return json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     )
-    return canonical, value
+
+
+def _canonical_metadata(raw: str) -> tuple[str, object]:
+    value = json.loads(raw)
+    return _canonical_json(value), value
 
 
 def _stable_metadata(value: object) -> object:
@@ -57,6 +60,8 @@ class SQLiteInbox:
 
     def __init__(self, path: str | Path, *, timeout: float = BUSY_TIMEOUT_SECONDS):
         self.path = Path(path)
+        if str(self.path) == ":memory:":
+            raise InboxError("SQLite Inbox requires a persistent database path")
         self._connection = sqlite3.connect(self.path, timeout=timeout, isolation_level=None)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute(f"PRAGMA busy_timeout = {max(0, int(timeout * 1000))}")
@@ -171,9 +176,9 @@ class SQLiteInbox:
                         f"{existing['metadata_version']} and {message.metadata_version}"
                     )
                 _, stored_metadata = _canonical_metadata(existing["metadata_json"])
-                stable_match = _stable_metadata(stored_metadata) == _stable_metadata(
-                    incoming_metadata
-                )
+                stable_match = _canonical_json(
+                    _stable_metadata(stored_metadata)
+                ) == _canonical_json(_stable_metadata(incoming_metadata))
                 scalar_fields = (
                     "sender_id",
                     "text",
