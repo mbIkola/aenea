@@ -5,6 +5,7 @@ requires-python = ">=3.13"
 [manifest]
 members = [
     "aenea",
+    "aenea-agents",
     "aenea-contracts",
     "aenea-telegram-agent",
 ]
@@ -25,6 +26,17 @@ dev = [
 dev = [{ name = "ruff", specifier = ">=0.11,<1" }]
 
 [[package]]
+name = "aenea-agents"
+version = "0.1.0"
+source = { editable = "packages/agents" }
+dependencies = [
+    { name = "aenea-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "aenea-contracts", editable = "packages/contracts" }]
+
+[[package]]
 name = "aenea-contracts"
 version = "0.1.0"
 source = { editable = "packages/contracts" }
@@ -34,12 +46,14 @@ name = "aenea-telegram-agent"
 version = "0.1.0"
 source = { editable = "apps/telegram-agent" }
 dependencies = [
+    { name = "aenea-agents" },
     { name = "aenea-contracts" },
     { name = "telethon" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "aenea-agents", editable = "packages/agents" },
     { name = "aenea-contracts", editable = "packages/contracts" },
     { name = "telethon", specifier = ">=1.46,<2" },
 ]

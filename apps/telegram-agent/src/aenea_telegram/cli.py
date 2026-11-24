@@ -6,14 +6,17 @@ import json
 import os
 import sys
 from contextlib import nullcontext
+from dataclasses import asdict
 from importlib.metadata import version
 from pathlib import Path
 
+from aenea_agents import Dispatcher
 from telethon.errors import FloodWaitError
 
 from .config import AppError, load_config
 from .inbox import SQLiteInbox
 from .reader import run
+from .routing import RoutingProcessor, default_hub
 from .session_store import ProtonSessionStore
 
 
@@ -55,11 +58,31 @@ def main() -> None:
     watch = commands.add_parser("watch", help="Сохранять новые сообщения выбранной группы в SQLite")
     watch.add_argument("--chat-id", type=int, required=True, help="ID группы из команды groups")
     watch.add_argument("--db", type=Path, required=True, help="Путь к локальной SQLite Inbox")
+    watch.add_argument("--route", action="store_true", help="Включить dummy-маршрутизацию агентов")
+    commands.add_parser("agents", help="Показать паспорта зарегистрированных агентов offline")
+    route = commands.add_parser(
+        "route", help="Обработать сохранённые сообщения offline без отправки"
+    )
+    route.add_argument("--db", type=Path, required=True)
+    route.add_argument("--source-account-id", type=int, required=True)
+    route.add_argument("--chat-id", type=int, required=True)
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
         return
     try:
+        if args.command == "agents":
+            for descriptor in default_hub().descriptors():
+                emit_json(asdict(descriptor))
+            return
+        if args.command == "route":
+            if not args.db.is_file():
+                raise AppError("Для route требуется существующий файл Inbox.")
+            with SQLiteInbox(args.db) as inbox:
+                RoutingProcessor(inbox, Dispatcher(default_hub()), emit_output).process_scope(
+                    args.source_account_id, args.chat_id
+                )
+            return
         cfg = load_config(os.environ, session_required=args.command != "login")
         if args.command == "login":
             require_terminal()
@@ -71,6 +94,11 @@ def main() -> None:
                     chat_id=getattr(args, "chat_id", None),
                     store=ProtonSessionStore() if args.command == "login" else None,
                     inbox=inbox,
+                    processor=(
+                        RoutingProcessor(inbox, Dispatcher(default_hub()), emit_output)
+                        if args.command == "watch" and args.route
+                        else None
+                    ),
                     emit=emit_output,
                 )
             )

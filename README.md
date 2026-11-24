@@ -8,7 +8,7 @@ Aenea будет наблюдать за выбранными источника
 
 Подготовлен uv workspace, границы пакетов и CI. Реализован первый Telegram Reader POC на Telethon: `login` с сохранением StringSession в Proton Pass, `groups` и `watch --chat-id --db`. Запуск описан в [руководстве Reader](docs/telegram-reader.md).
 
-Реализован SQLite Inbox: новые сообщения выбранной группы сохраняются до вывода подтверждения, идентичные повторы дедуплицируются. Классификация, кейсы, обработчики и доставка пока не реализованы. Langfuse и OpenAI не подключены. Восстановления пропусков и истории редактирований нет. Наличие реализации не подтверждает live-вход в аккаунт.
+Реализован SQLite Inbox и первый [срез регистрации и маршрутизации агентов](docs/agent-routing.md): AgentHub, Router по паспортам и dummy RaidSL. Агент возвращает карточку «это моё, но пока игнорируем»; локальный IgnoreWriter сохраняет терминальный результат без отправки в Telegram. Кейсы, игровая логика, LLM и внешняя доставка не реализованы. Восстановления пропусков и истории редактирований нет.
 
 ## Принятые решения MVP
 
@@ -37,6 +37,7 @@ uv build --all-packages
 - `apps/telegram-agent/` — пользовательский Telegram Reader на Telethon с CLI.
 - `configs/telegram/` — reference-профили первого входа и повторного чтения.
 - `packages/contracts/` — `IncomingMessage`, ключ сообщения и результат приёма без зависимости от Telethon/SQLite.
+- `packages/agents/` — независимые registry, Router, Dispatcher, IgnoreWriter и dummy RaidSL.
 - `configs/raid/` — несекретный пример профиля первого сценария.
 - `docs/` — архитектура, диаграммы и правила конфигурации на русском.
 - `.env.example` — reference-шаблон dev с Proton Pass URI и несекретными настройками.

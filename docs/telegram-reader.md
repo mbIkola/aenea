@@ -2,7 +2,9 @@
 
 Реализованы `login`, `groups` и `watch` на Telethon 1.46 (зафиксирован в `uv.lock`). Это пользовательский
 клиент отдельного аккаунта, не бот. Новые сообщения сохраняются в локальный
-SQLite Inbox. Case, matching, Writer, Outbox, LLM и Langfuse пока не подключены.
+SQLite Inbox. Опциональный `watch --route` включает [dummy-маршрутизацию](agent-routing.md)
+с карточкой RaidSL и локальным `ignore`. Case, Telegram Writer, Outbox, LLM и Langfuse
+пока не подключены.
 
 ## Подготовка
 

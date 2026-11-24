@@ -12,6 +12,7 @@ from telethon.tl import types
 from .config import AppError, Config
 from .inbox import Inbox
 from .normalization import normalize_message
+from .routing import RoutingProcessor
 from .session_store import ProtonSessionStore
 from .terminal import prompt_secret
 
@@ -46,6 +47,7 @@ async def run(
     chat_id: int | None = None,
     store: ProtonSessionStore | None = None,
     inbox: Inbox | None = None,
+    processor: RoutingProcessor | None = None,
     emit: Callable[[dict], None],
 ) -> None:
     if command == "login":
@@ -94,7 +96,7 @@ async def run(
                 if dialog.is_group:
                     emit({"chat_id": dialog.id, "title": dialog.title})
         else:
-            await _watch(client, chat_id, emit, initial_session, inbox)
+            await _watch(client, chat_id, emit, initial_session, inbox, processor)
     finally:
         await client.disconnect()
         if command != "login":
@@ -153,7 +155,7 @@ async def _login(client, config, store, emit) -> None:
     emit({"type": "login", "status": "saved", "reference": "pass://aenea/telegram-session/secret"})
 
 
-async def _watch(client, chat_id, emit, initial_session, inbox: Inbox) -> None:
+async def _watch(client, chat_id, emit, initial_session, inbox: Inbox, processor=None) -> None:
     selected = None
     async for dialog in client.iter_dialogs():
         if dialog.is_group and dialog.id == chat_id:
@@ -165,6 +167,8 @@ async def _watch(client, chat_id, emit, initial_session, inbox: Inbox) -> None:
     account = await client.get_me()
     if account is None or not isinstance(account.id, int):
         raise AppError("Не удалось определить ID аккаунта Reader.")
+    if processor is not None:
+        processor.process_scope(account.id, chat_id)
     failure = asyncio.get_running_loop().create_future()
     active: set[asyncio.Task] = set()
     serial = asyncio.Lock()
@@ -189,6 +193,8 @@ async def _watch(client, chat_id, emit, initial_session, inbox: Inbox) -> None:
                         "message_id": message.message_id,
                     }
                 )
+                if processor is not None:
+                    processor.process_scope(account.id, chat_id)
             except Exception as exc:
                 # Telethon swallows callback exceptions. Wake the controlling coroutine.
                 if not failure.done():
