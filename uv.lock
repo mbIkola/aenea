@@ -41,7 +41,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aenea-contracts", editable = "packages/contracts" },
-    { name = "telethon", specifier = ">=1.45,<2" },
+    { name = "telethon", specifier = ">=1.46,<2" },
 ]
 
 [[package]]

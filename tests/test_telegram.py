@@ -2,15 +2,26 @@ import asyncio
 import io
 import json
 import subprocess
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from aenea_telegram import cli, config, reader, session_store
+from telethon import events
 from telethon.crypto import AuthKey
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
+from telethon.tl.types import (
+    Message,
+    MessageActionChatCreate,
+    MessageService,
+    PeerChat,
+    UpdateNewMessage,
+)
 
 
 def session_string():
@@ -128,6 +139,7 @@ class FakeClient:
         self.connect = AsyncMock()
         self.disconnect = AsyncMock()
         self.is_user_authorized = AsyncMock(return_value=authorized)
+        self.get_me = AsyncMock(return_value=SimpleNamespace(id=777))
         self.send_code_request = AsyncMock(return_value=SimpleNamespace(phone_code_hash="hash"))
         self.sign_in = AsyncMock(side_effect=self.authorize)
         self.log_out = AsyncMock(return_value=True)
@@ -145,6 +157,9 @@ class FakeClient:
 
     def add_event_handler(self, handler, event):
         self.handler = handler
+
+    def remove_event_handler(self, handler):
+        self.handler = None
 
     async def run_until_disconnected(self):
         for event in self.events:
@@ -171,6 +186,9 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
         self.events = []
         self.rows = []
         self.cfg = config.load_config(environment(), session_required=True)
+        self.inbox = SimpleNamespace(
+            accept=AsyncMock(return_value=SimpleNamespace(status="stored"))
+        )
 
     async def test_groups_outputs_only_group_metadata(self):
         self.dialogs = [group(), SimpleNamespace(is_group=False, title="Private", id=9)]
@@ -193,7 +211,9 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
         for chat_id in [9, -100999]:
             with patch.object(reader, "TelegramClient", self.make_factory()):
                 with self.assertRaises(config.AppError):
-                    await reader.run("watch", self.cfg, chat_id=chat_id, emit=self.rows.append)
+                    await reader.run(
+                        "watch", self.cfg, inbox=self.inbox, chat_id=chat_id, emit=self.rows.append
+                    )
             self.assertIsNone(self.client.handler)
             self.client.disconnect.assert_awaited_once()
 
@@ -205,17 +225,168 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(
                 is_group=True,
                 chat_id=-100123,
-                message=SimpleNamespace(id=42, raw_text="message\x1b[31m", date=None, sender_id=12),
+                message=Message(
+                    id=42,
+                    peer_id=PeerChat(123),
+                    message="message\x1b[31m",
+                    date=datetime(2026, 11, 24, tzinfo=UTC),
+                    from_id=None,
+                ),
             ),
         ]
         with patch.object(reader, "TelegramClient", self.make_factory()):
-            await reader.run("watch", self.cfg, chat_id=-100123, emit=self.rows.append)
-        messages = [row for row in self.rows if row.get("type") == "message"]
+            await reader.run(
+                "watch", self.cfg, inbox=self.inbox, chat_id=-100123, emit=self.rows.append
+            )
+        messages = [row for row in self.rows if row.get("type") == "stored"]
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0]["message_id"], 42)
-        self.assertEqual(messages[0]["text"], "message\x1b[31m")
+        self.assertNotIn("text", messages[0])
+        self.assertEqual(self.inbox.accept.await_count, 1)
+        accepted = self.inbox.accept.call_args.args[0]
+        self.assertEqual(accepted.text, "message\x1b[31m")
+        self.assertEqual(accepted.source_account_id, 777)
         self.assertTrue(self.options["receive_updates"])
         self.assertFalse(self.options["catch_up"])
+
+    async def test_watch_requires_inbox_before_network(self):
+        with patch.object(reader, "TelegramClient") as factory:
+            with self.assertRaises(config.AppError):
+                await reader.run("watch", self.cfg, chat_id=-100123, emit=self.rows.append)
+        factory.assert_not_called()
+
+    async def test_swallowed_callback_error_stops_watcher_and_rejects_next_event(self):
+        self.dialogs = [group()]
+        self.inbox.accept.side_effect = OSError("sensitive message")
+        factory = self.make_factory()
+        finished = asyncio.Event()
+
+        def swallowing_factory(*args, **kwargs):
+            client = factory(*args, **kwargs)
+
+            async def updates():
+                event = SimpleNamespace(
+                    is_group=True,
+                    chat_id=-100123,
+                    message=Message(
+                        id=42,
+                        peer_id=PeerChat(123),
+                        message="secret text",
+                        date=datetime(2026, 11, 24, tzinfo=UTC),
+                    ),
+                )
+                try:
+                    for _ in range(2):
+                        try:
+                            await client.handler(event)
+                        except Exception:
+                            pass  # Telethon also catches ordinary callback exceptions.
+                    await asyncio.Event().wait()
+                finally:
+                    finished.set()
+
+            client.run_until_disconnected = updates
+            return client
+
+        with patch.object(reader, "TelegramClient", swallowing_factory):
+            with self.assertRaises(OSError):
+                await asyncio.wait_for(
+                    reader.run(
+                        "watch", self.cfg, inbox=self.inbox, chat_id=-100123, emit=self.rows.append
+                    ),
+                    timeout=2,
+                )
+        self.assertTrue(finished.is_set())
+        self.assertEqual(self.inbox.accept.await_count, 1)
+        self.assertFalse(any(row.get("type") == "stored" for row in self.rows))
+
+    async def test_cancellation_drains_accept_before_returning(self):
+        self.dialogs = [group()]
+        entered, release, committed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        factory = self.make_factory()
+        callback = None
+
+        async def accept(message):
+            entered.set()
+            await release.wait()
+            committed.set()
+            return SimpleNamespace(status="stored")
+
+        self.inbox.accept.side_effect = accept
+
+        def concurrent_factory(*args, **kwargs):
+            client = factory(*args, **kwargs)
+
+            async def updates():
+                nonlocal callback
+                event = SimpleNamespace(
+                    is_group=True,
+                    chat_id=-100123,
+                    message=Message(
+                        id=42,
+                        peer_id=PeerChat(123),
+                        message="secret text",
+                        date=datetime(2026, 11, 24, tzinfo=UTC),
+                    ),
+                )
+                callback = asyncio.create_task(client.handler(event))
+                await asyncio.Event().wait()
+
+            client.run_until_disconnected = updates
+            return client
+
+        with patch.object(reader, "TelegramClient", concurrent_factory):
+            task = asyncio.create_task(
+                reader.run(
+                    "watch", self.cfg, inbox=self.inbox, chat_id=-100123, emit=self.rows.append
+                )
+            )
+            await asyncio.wait_for(entered.wait(), timeout=2)
+            self.assertFalse(any(row.get("type") == "stored" for row in self.rows))
+            task.cancel()
+            await asyncio.sleep(0)
+            self.assertFalse(task.done())
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        self.assertTrue(committed.is_set())
+        self.assertTrue(callback.done())
+        self.assertEqual(self.rows[-1]["type"], "stored")
+
+    async def test_output_failure_preserves_commit_and_retry_is_duplicate(self):
+        self.dialogs = [group()]
+        self.events = [
+            SimpleNamespace(
+                is_group=True,
+                chat_id=-100123,
+                message=Message(
+                    id=42,
+                    peer_id=PeerChat(123),
+                    message="stored privately",
+                    date=datetime(2026, 11, 24, tzinfo=UTC),
+                ),
+            )
+        ]
+
+        def failed_output(row):
+            if row["type"] == "stored":
+                raise OSError("output closed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "messages.sqlite3"
+            with cli.SQLiteInbox(path) as inbox:
+                with patch.object(reader, "TelegramClient", self.make_factory()):
+                    with self.assertRaises(OSError):
+                        await reader.run(
+                            "watch", self.cfg, inbox=inbox, chat_id=-100123, emit=failed_output
+                        )
+            with cli.SQLiteInbox(path) as inbox:
+                with patch.object(reader, "TelegramClient", self.make_factory()):
+                    await reader.run(
+                        "watch", self.cfg, inbox=inbox, chat_id=-100123, emit=self.rows.append
+                    )
+        self.assertEqual(self.rows[-1]["type"], "duplicate")
+        self.assertNotIn("stored privately", json.dumps(self.rows))
 
     async def test_login_saves_new_session_and_disconnects(self):
         cfg = config.load_config(environment(), session_required=False)
@@ -359,7 +530,9 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(reader, "TelegramClient", migrating_factory):
             with self.assertRaises(config.AppError):
-                await reader.run("watch", self.cfg, chat_id=-100123, emit=self.rows.append)
+                await reader.run(
+                    "watch", self.cfg, inbox=self.inbox, chat_id=-100123, emit=self.rows.append
+                )
         self.client.disconnect.assert_awaited_once()
 
     async def test_watch_stops_on_session_change_without_an_incoming_message(self):
@@ -383,7 +556,9 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(reader, "TelegramClient", migrating_factory):
             with self.assertRaises(config.AppError):
                 await asyncio.wait_for(
-                    reader.run("watch", self.cfg, chat_id=-100123, emit=self.rows.append),
+                    reader.run(
+                        "watch", self.cfg, inbox=self.inbox, chat_id=-100123, emit=self.rows.append
+                    ),
                     timeout=3,
                 )
         self.assertTrue(stopped.is_set())
@@ -455,7 +630,49 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
                 await reader.run("login", self.cfg, store=store, emit=self.rows.append)
 
 
+class MessageEventTests(unittest.TestCase):
+    def test_builder_includes_new_service_message_with_chat_filter(self):
+        message = MessageService(
+            id=42,
+            peer_id=PeerChat(123),
+            date=datetime(2026, 11, 24, tzinfo=UTC),
+            action=MessageActionChatCreate("Test", [1]),
+        )
+        update = UpdateNewMessage(message=message, pts=1, pts_count=1)
+        self.assertIsNone(events.NewMessage.build(update))
+        event = reader.InboxNewMessage.build(update)
+        self.assertIs(event.message, message)
+        self.assertEqual(event.chat_id, -123)
+        self.assertTrue(event.is_group)
+
+
 class CliTests(unittest.TestCase):
+    @patch("sys.argv", ["aenea-telegram", "watch", "--chat-id", "-123"])
+    def test_watch_requires_explicit_db_before_config_and_network(self):
+        with patch.object(cli, "load_config") as load, redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as caught:
+                cli.main()
+        self.assertEqual(caught.exception.code, 2)
+        load.assert_not_called()
+
+    @patch.dict("os.environ", environment(), clear=True)
+    def test_watch_opens_and_closes_explicit_inbox(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "inbox.sqlite3"
+
+            async def run(command, cfg, **kwargs):
+                self.assertIsNotNone(kwargs["inbox"])
+                self.assertTrue(database.exists())
+
+            with (
+                patch(
+                    "sys.argv",
+                    ["aenea-telegram", "watch", "--chat-id", "-123", "--db", str(database)],
+                ),
+                patch.object(cli, "run", run),
+            ):
+                cli.main()
+
     def test_json_output_escapes_terminal_controls(self):
         output = io.StringIO()
         with redirect_stdout(output):
