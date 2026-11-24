@@ -6,9 +6,9 @@ Aenea будет наблюдать за выбранными источника
 
 ## Текущее состояние
 
-Подготовлен scaffold: uv workspace, границы пакетов, CLI, пример конфигурации и CI. Концепция и диаграммы зафиксированы в [документации](docs/README.md).
+Подготовлен uv workspace, границы пакетов и CI. Реализован первый Telegram Reader POC на Telethon: `login` с сохранением StringSession в Proton Pass, `groups` и `watch --chat-id`. Запуск описан в [руководстве Reader](docs/telegram-reader.md).
 
-Вход в Telegram, приём сообщений, классификация, SQLite, обработчики и доставка пока не реализованы. Langfuse и OpenAI не подключены.
+Классификация, кейсы, доменная SQLite, обработчики и доставка пока не реализованы. Langfuse и OpenAI не подключены. Reader показывает новые сообщения выбранной группы, без восстановления пропусков и хранения истории. Наличие реализации не подтверждает live-вход в аккаунт.
 
 ## Принятые решения MVP
 
@@ -26,6 +26,7 @@ uv run --locked --package aenea-telegram-agent aenea-telegram --help
 uv run --locked --package aenea-telegram-agent aenea-telegram --version
 uv run --locked ruff check .
 uv run --locked ruff format --check .
+uv run --locked --package aenea-telegram-agent python -m unittest discover -s tests -v
 uv build --all-packages
 ```
 
@@ -33,7 +34,8 @@ uv build --all-packages
 
 ## Структура
 
-- `apps/telegram-agent/` — приложение пользовательского Telegram-клиента на Telethon; сейчас пакет с CLI.
+- `apps/telegram-agent/` — пользовательский Telegram Reader на Telethon с CLI.
+- `configs/telegram/` — reference-профили первого входа и повторного чтения.
 - `packages/contracts/` — место общих контрактов; публичная схема сигналов ещё не реализована.
 - `configs/raid/` — несекретный пример профиля первого сценария.
 - `docs/` — архитектура, диаграммы и правила конфигурации на русском.
