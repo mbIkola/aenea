@@ -8,7 +8,11 @@ Aenea будет наблюдать за выбранными источника
 
 Подготовлен uv workspace, границы пакетов и CI. Реализован первый Telegram Reader POC на Telethon: `login` с сохранением StringSession в Proton Pass, `groups` и `watch --chat-id --db`. Запуск описан в [руководстве Reader](docs/telegram-reader.md).
 
-Реализован SQLite Inbox и первый [срез регистрации и маршрутизации агентов](docs/agent-routing.md): AgentHub, Router по паспортам и dummy RaidSL. Агент возвращает карточку «это моё, но пока игнорируем»; локальный IgnoreWriter сохраняет терминальный результат без отправки в Telegram. Кейсы, игровая логика, LLM и внешняя доставка не реализованы. Восстановления пропусков и истории редактирований нет.
+Реализован SQLite Inbox и первый [срез регистрации и маршрутизации агентов](docs/agent-routing.md): AgentHub, Router по паспортам и dummy RaidSL. Агент возвращает карточку «это моё, но пока игнорируем»; локальный IgnoreWriter сохраняет терминальный результат без отправки в Telegram. Кейсы, игровая логика и внешняя доставка не реализованы. Восстановления пропусков и истории редактирований нет.
+
+Отдельный [RaidSL Runner](docs/raidsl-runner.md) запускает Agents SDK на тестовых
+данных с явным выбором OpenAI или Packet. Каталог и таланты подключаются через
+адаптеры. Reader остаётся dummy-only, без автоматической передачи сообщений модели.
 
 ## Принятые решения MVP
 
@@ -37,7 +41,8 @@ uv build --all-packages
 - `apps/telegram-agent/` — пользовательский Telegram Reader на Telethon с CLI.
 - `configs/telegram/` — reference-профили первого входа и повторного чтения.
 - `packages/contracts/` — `IncomingMessage`, ключ сообщения и результат приёма без зависимости от Telethon/SQLite.
-- `packages/agents/` — независимые registry, Router, Dispatcher, IgnoreWriter и dummy RaidSL.
+- `packages/agents/` — независимые registry, Router, Dispatcher и IgnoreWriter.
+- `packages/raidsl/` — dummy, SDK Runner, интерфейсы каталога и fixture-tools.
 - `configs/raid/` — несекретный пример профиля первого сценария.
 - `docs/` — архитектура, диаграммы и правила конфигурации на русском.
 - `.env.example` — reference-шаблон dev с Proton Pass URI и несекретными настройками.

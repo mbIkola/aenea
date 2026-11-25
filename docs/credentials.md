@@ -17,7 +17,7 @@
 | `LANGFUSE_BASE_URL` | `pass://aenea/langfuse/base_url` | Адрес hosted Langfuse именно выбранного проекта/региона. |
 | `LANGFUSE_PUBLIC_KEY` | `pass://aenea/langfuse/public_key` | Публичный API-ключ проекта Langfuse. |
 | `LANGFUSE_SECRET_KEY` | `pass://aenea/langfuse/secret` | Секретный API-ключ того же проекта Langfuse. |
-| `OPENAI_API_KEY` | `pass://aenea/openai/api_key` | Зарезервировано; аккаунт/ключ ещё не подготовлены. |
+| `OPENAI_API_KEY` | `pass://aenea/openai/api_key` | Ключ Aenea; отдельный профиль RaidSL передаёт его как `RAIDSL_API_KEY`. |
 | `TELEGRAM_API_ID` | `pass://aenea/telegram/api_id` | ID собственного Telegram application. |
 | `TELEGRAM_API_HASH` | `pass://aenea/telegram/api_hash` | Hash того же application. |
 | `TELEGRAM_PHONE` | `pass://aenea/telegram/phone` | Номер отдельного аккаунта; нужен только для login. |
@@ -37,9 +37,18 @@ pass-cli run --env-file .env -- uv run --locked --package aenea-telegram-agent a
 
 Все активные ссылки выбранного файла должны разрешаться. Готовность полного профиля не проверялась; наличие ссылок не доказывает готовность credentials. Перед отдельными проверками сервисов следует явно подготовить reference-профиль только с нужными ссылками; отсутствие доступа нельзя маскировать fallback-механизмом.
 
+RaidSL использует `configs/raidsl/dev.openai.env.example` либо
+`configs/raidsl/dev.packet.env.example` с явным провайдером и `AENEA_ENV=dev`.
+`RAIDSL_API_KEY` ссылается соответственно на `pass://aenea/openai/api_key` или
+`pass://aenea/deepseek/api_key`. Смена провайдера явная, без fallback при ошибке.
+Пользователь подготовил ключи самостоятельно; PR3 проверяет их только через
+инъекцию в процесс для синтетического demo, без печати значений или создания item.
+
 Не выполнять `source .env`: shell не разыменовывает Proton-ссылки. Не материализовывать `.env` с plaintext-секретами, не использовать `pass-cli inject` для генерации такого файла, не выводить окружение процесса. Сохранить стандартное маскирование CLI. Приложение получает уже разрешённые значения через окружение, без собственного загрузчика секретов и неявного dotenv fallback.
 
-CLI не загружает `.env` самостоятельно. Команды Reader проверяют уже разрешённые переменные процесса; другие сервисы не подключены. Offline-проверки и тесты выполняются обычным `uv` без credentials.
+CLI не загружают `.env` самостоятельно. Reader и отдельный RaidSL demo проверяют
+уже разрешённые переменные процесса. Offline-проверки и тесты выполняются обычным
+`uv` без credentials; Langfuse пока не подключён.
 
 ## Telegram-сессия
 

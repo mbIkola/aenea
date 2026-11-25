@@ -2,7 +2,7 @@ import unittest
 from dataclasses import replace
 
 from aenea_agents import AgentDescriptor, AgentHub, Dispatcher, IgnoreWriter, Router
-from aenea_agents.raidsl import RaidSLAgent
+from aenea_raidsl.dummy import DummyRaidSLAgent as RaidSLAgent
 from test_inbox import message
 
 
