@@ -254,6 +254,10 @@ class SQLiteInbox:
         """A saved message without a terminal routing result is pending work."""
         if limit <= 0:
             raise ValueError("Batch limit must be positive")
+        # TODO(perf): Each page rescans completed messages; LIMIT bounds output, not scan work.
+        # This synchronous query can increasingly block Reader as history grows.
+        # Before large-history recovery, add a local enqueue sequence/cursor or pending queue,
+        # preserving unfinished work on failure; Telegram message_id is not an ingestion cursor.
         rows = self._connection.execute(
             """SELECT m.* FROM messages m
                LEFT JOIN agent_dispatches d
