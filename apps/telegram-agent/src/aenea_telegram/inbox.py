@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from aenea_contracts import IncomingMessage, StoreResult
+from aenea_contracts import IncomingMessage, MessageKey, StoreResult
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BUSY_TIMEOUT_SECONDS = 0.5
 
 
@@ -64,6 +64,7 @@ class SQLiteInbox:
             raise InboxError("SQLite Inbox requires a persistent database path")
         self._connection = sqlite3.connect(self.path, timeout=timeout, isolation_level=None)
         self._connection.row_factory = sqlite3.Row
+        self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute(f"PRAGMA busy_timeout = {max(0, int(timeout * 1000))}")
         try:
             self._initialize()
@@ -102,6 +103,7 @@ class SQLiteInbox:
                         PRIMARY KEY (source, source_account_id, chat_id, message_id)
                     )"""
                 )
+                self._create_dispatch_table()
                 self._connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 self._connection.execute("COMMIT")
             except BaseException:
@@ -109,7 +111,8 @@ class SQLiteInbox:
                     self._connection.execute("ROLLBACK")
                 raise
             return
-        if version != SCHEMA_VERSION or tables != {"messages"}:
+        expected_tables = {"messages"} if version == 1 else {"messages", "agent_dispatches"}
+        if version not in (1, SCHEMA_VERSION) or tables != expected_tables:
             raise SchemaVersionError(f"Unsupported Inbox schema version: {version}")
         schema = self._connection.execute("PRAGMA table_info(messages)").fetchall()
         expected = {
@@ -130,6 +133,43 @@ class SQLiteInbox:
         actual = {row[1]: (row[2].upper(), row[3], row[5]) for row in schema}
         if actual != expected:
             raise SchemaVersionError("Inbox messages table does not match the supported schema")
+        if version == 1:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                self._create_dispatch_table()
+                self._connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                self._connection.execute("COMMIT")
+            except BaseException:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+        else:
+            schema = self._connection.execute("PRAGMA table_info(agent_dispatches)").fetchall()
+            expected_dispatch = {
+                "source": ("TEXT", 1, 1),
+                "source_account_id": ("INTEGER", 1, 2),
+                "chat_id": ("INTEGER", 1, 3),
+                "message_id": ("INTEGER", 1, 4),
+                "result_json": ("TEXT", 1, 0),
+                "processed_at": ("TEXT", 1, 0),
+            }
+            if {row[1]: (row[2].upper(), row[3], row[5]) for row in schema} != expected_dispatch:
+                raise SchemaVersionError("Unsupported agent_dispatches table")
+
+    def _create_dispatch_table(self) -> None:
+        self._connection.execute(
+            """CREATE TABLE agent_dispatches (
+                source TEXT NOT NULL,
+                source_account_id INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                result_json TEXT NOT NULL,
+                processed_at TEXT NOT NULL,
+                PRIMARY KEY (source, source_account_id, chat_id, message_id),
+                FOREIGN KEY (source, source_account_id, chat_id, message_id)
+                    REFERENCES messages (source, source_account_id, chat_id, message_id)
+            )"""
+        )
 
     async def accept(self, message: IncomingMessage) -> StoreResult:
         if message.metadata_version != 1:
@@ -207,6 +247,64 @@ class SQLiteInbox:
                 self._connection.execute("ROLLBACK")
             raise
         return StoreResult(message.key, status)
+
+    def pending_dispatches(
+        self, source_account_id: int, chat_id: int, *, limit: int = 100
+    ) -> list[IncomingMessage]:
+        """A saved message without a terminal routing result is pending work."""
+        if limit <= 0:
+            raise ValueError("Batch limit must be positive")
+        # TODO(perf): Each page rescans completed messages; LIMIT bounds output, not scan work.
+        # This synchronous query can increasingly block Reader as history grows.
+        # Before large-history recovery, add a local enqueue sequence/cursor or pending queue,
+        # preserving unfinished work on failure; Telegram message_id is not an ingestion cursor.
+        rows = self._connection.execute(
+            """SELECT m.* FROM messages m
+               LEFT JOIN agent_dispatches d
+                 ON m.source=d.source AND m.source_account_id=d.source_account_id
+                 AND m.chat_id=d.chat_id AND m.message_id=d.message_id
+               WHERE m.source='telegram' AND m.source_account_id=? AND m.chat_id=?
+                 AND d.message_id IS NULL
+               ORDER BY m.rowid LIMIT ?""",
+            (source_account_id, chat_id, limit),
+        ).fetchall()
+        return [
+            IncomingMessage(
+                **{
+                    **dict(row),
+                    "sent_at": datetime.fromisoformat(row["sent_at"]),
+                    "received_at": datetime.fromisoformat(row["received_at"]),
+                }
+            )
+            for row in rows
+        ]
+
+    def record_dispatch(self, key: MessageKey, result: dict) -> bool:
+        """Commit one terminal result before emitting its local receipt."""
+        payload = _canonical_json(result)
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = self._connection.execute(
+                """INSERT INTO agent_dispatches (
+                    source, source_account_id, chat_id, message_id, result_json, processed_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (source, source_account_id, chat_id, message_id) DO NOTHING""",
+                (
+                    key.source,
+                    key.source_account_id,
+                    key.chat_id,
+                    key.message_id,
+                    payload,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            recorded = cursor.rowcount == 1
+            self._connection.execute("COMMIT")
+        except BaseException:
+            if self._connection.in_transaction:
+                self._connection.execute("ROLLBACK")
+            raise
+        return recorded
 
     def close(self) -> None:
         self._connection.close()
