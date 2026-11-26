@@ -27,8 +27,9 @@ class MasteryBuild:
     character_id: str
     build_id: str
     label: str
-    asset_ref: str
+    asset_ref: str | None
     fixture: bool
+    recommendation: dict | None = None
 
 
 class Catalog(Protocol):

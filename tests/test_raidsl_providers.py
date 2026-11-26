@@ -6,6 +6,7 @@ from aenea_raidsl.agent import RaidSLAgent
 from aenea_raidsl.catalog import load_fixture_services
 from aenea_raidsl.config import load_model_config
 from aenea_raidsl.provider import make_model
+from aenea_raidsl.runtime_tools import FixtureTools
 from openai import AsyncOpenAI
 from test_raidsl_config import settings
 from test_raidsl_runner import script
@@ -78,7 +79,9 @@ class ProviderProtocolTests(unittest.IsolatedAsyncioTestCase):
                         http_client=http_client,
                         max_retries=0,
                     ) as client:
-                        result = await RaidSLAgent(*load_fixture_services(), config).run(
+                        result = await RaidSLAgent(
+                            config, FixtureTools(*load_fixture_services())
+                        ).run(
                             "synthetic",
                             model=make_model(config, client),
                         )

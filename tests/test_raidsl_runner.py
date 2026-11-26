@@ -5,6 +5,7 @@ import unittest
 from aenea_raidsl.agent import RaidSLAgent, RaidSLRunError
 from aenea_raidsl.catalog import load_fixture_services
 from aenea_raidsl.config import load_model_config
+from aenea_raidsl.runtime_tools import FixtureTools
 from agents import Model
 from agents.models.interface import ModelResponse
 from agents.usage import Usage
@@ -75,7 +76,9 @@ def script():
 
 class RunnerTests(unittest.IsolatedAsyncioTestCase):
     def agent(self, **overrides):
-        return RaidSLAgent(*load_fixture_services(), load_model_config(settings(**overrides)))
+        return RaidSLAgent(
+            load_model_config(settings(**overrides)), FixtureTools(*load_fixture_services())
+        )
 
     async def test_real_sdk_executes_both_tools_then_validates_draft(self):
         model = ScriptedModel(script())
