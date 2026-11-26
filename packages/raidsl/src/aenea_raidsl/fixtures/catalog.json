@@ -1,0 +1,7 @@
+{
+  "fixture": true,
+  "characters": [
+    {"character_id": "alure", "name": "Alure"},
+    {"character_id": "kael", "name": "Kael"}
+  ]
+}

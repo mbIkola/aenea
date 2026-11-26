@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 
 from aenea_agents import AgentHub, Dispatcher
-from aenea_agents.raidsl import RaidSLAgent
+from aenea_raidsl.dummy import DummyRaidSLAgent as RaidSLAgent
 
 from .inbox import SQLiteInbox
 

@@ -38,7 +38,9 @@ flowchart TD
 - **IgnoreWriter** локально исполняет только `ignore` и возвращает `ignored`.
   Неизвестный тип действия отклоняется. Telegram Writer и отправка не реализованы.
 
-`packages/agents` не зависит от Telegram и SQLite. `apps/telegram-agent/src/aenea_telegram/routing.py`
+`packages/agents` не зависит от Telegram, SDK и SQLite. Dummy теперь находится
+в `packages/raidsl`, рядом с отдельным [SDK Runner](raidsl-runner.md).
+`apps/telegram-agent/src/aenea_telegram/routing.py`
 собирает registry с одним `RaidSLAgent` и связывает Dispatcher с Inbox и CLI.
 Отдельного процесса оркестратора или сетевого AgentHub нет.
 

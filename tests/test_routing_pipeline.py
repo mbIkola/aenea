@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from aenea_agents import AgentHub, Dispatcher
-from aenea_agents.raidsl import RaidSLAgent
+from aenea_raidsl.dummy import DummyRaidSLAgent as RaidSLAgent
 from aenea_telegram import cli, config, reader
 from aenea_telegram.inbox import SQLiteInbox
 from aenea_telegram.routing import RoutingProcessor
